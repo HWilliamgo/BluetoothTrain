@@ -25,7 +25,7 @@ public class MainActivity extends AppCompatActivity {
             String action = intent.getAction();
             //当发现了一个设备
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                //从Intent中获取BluetoothDevice对象
+                //从Intent中获取BluetoothDevice对象....
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 Log.d(TAG, "onReceive: " + "发现蓝牙设备!" + "名字：" + device.getName() + "  地址：" + device.getAddress());
             }
