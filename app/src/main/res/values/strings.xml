@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">BluetoothTrain</string>
+    <string name="disconnect">未连接</string>
 </resources>

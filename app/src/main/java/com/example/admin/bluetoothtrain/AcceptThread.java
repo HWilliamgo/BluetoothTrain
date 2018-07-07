@@ -16,6 +16,7 @@ public class AcceptThread extends Thread {
         BluetoothServerSocket tmp=null;
 
         try {
+//            bluetoothAdapter.listenUsingInsecureRfcommWithServiceRecord()
             tmp=bluetoothAdapter.listenUsingRfcommWithServiceRecord(NAME, UUID.fromString(NAME));
         } catch (IOException e) {
             e.printStackTrace();
