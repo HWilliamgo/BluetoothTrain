@@ -44,7 +44,6 @@ public class Rv_Adapter extends RecyclerView.Adapter<Rv_Adapter.MyViewHolder> {
             holder.itemView.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-
                     onItemClickListener.onClick(devicesList.get(holder.getAdapterPosition()));
                 }
             });
