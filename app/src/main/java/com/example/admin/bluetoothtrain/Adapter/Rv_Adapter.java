@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.support.annotation.NonNull;
 import android.support.v7.widget.RecyclerView;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,7 +39,12 @@ public class Rv_Adapter extends RecyclerView.Adapter<Rv_Adapter.MyViewHolder> {
 
     @Override
     public void onBindViewHolder(@NonNull final MyViewHolder holder, int position) {
-        holder.tvDeviceName.setText(devicesList.get(position).getName());
+        String name=devicesList.get(position).getName();
+        if (!TextUtils.isEmpty(name)){
+            holder.tvDeviceName.setText(name);
+        }else {
+            holder.tvDeviceName.setText(devicesList.get(position).getAddress());
+        }
 
         if (onItemClickListener != null) {
             holder.itemView.setOnClickListener(new View.OnClickListener() {

@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
+import android.os.ParcelUuid;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -24,7 +25,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
+import com.example.admin.bluetoothtrain.Adapter.RvPairedDeviceAdapter;
 import com.example.admin.bluetoothtrain.Adapter.Rv_Adapter;
+import com.example.admin.bluetoothtrain.Utils.BluetoothProfileConnector;
+import com.example.admin.bluetoothtrain.Utils.BluetoothUuidHelper;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -35,14 +39,17 @@ public class BluetoothActivity extends AppCompatActivity {
 
     private static final int BLUETOOTH_REQUEST_CODE = 99;
     private BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-    private BluetoothA2dp a2dp;
 
-    private List<BluetoothDevice> deviceList = new ArrayList<>();
+    private List<BluetoothDevice> deviceList = new ArrayList<>();//由startDiscovery发现的设备
+    private List<BluetoothDevice> pairedDeviceList = new ArrayList<>();//配对了的设备
+    private List<Integer> profileList;//设备所支持的Profile数组
 
-    private RecyclerView rv;
     private Rv_Adapter rv_adapter;
+    private RvPairedDeviceAdapter rvPairedDeviceAdapter;
 
-
+    /**
+     * 广播监听器，监听系统因为从远程设备获取到信息而发出的回调。
+     */
     private BroadcastReceiver receiver = new BroadcastReceiver() {
 
         @Override
@@ -50,9 +57,27 @@ public class BluetoothActivity extends AppCompatActivity {
             String action = intent.getAction();
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {//发现设备
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                Log.d(TAG, "onReceive: " + device.getAddress());
                 deviceList.add(device);
                 rv_adapter.notifyDataSetChanged();
+            }
+            if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
+                if (BluetoothDevice.BOND_BONDED == intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)) {//绑定成功
+                    BluetoothDevice pairedDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);//取得绑定设备
+                    pairedDeviceList.add(pairedDevice);//将绑定设备保存到数组中。
+                    rvPairedDeviceAdapter.notifyDataSetChanged();//更新列表
+                    Log.d(TAG, "onReceive: 新匹配到设备："+pairedDevice.toString());
+                }
+            }
+            if (BluetoothDevice.ACTION_UUID.equals(action)){//要在这里发起连接设备的操作（根据设备支持的Profile）
+                BluetoothDevice deviceWithUuid=intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                ParcelUuid[] uuids=deviceWithUuid.getUuids();//获取设备支持的UUID数组
+                profileList=BluetoothUuidHelper.uuidsToProfile(uuids);
+                Log.d(TAG, "onReceive: "+deviceWithUuid.toString());
+                for (Integer profile:profileList){
+                    Log.d(TAG, "onReceive: 设备支持的Profile"+profile);
+                }
+                //connect remote device with the Profile we get
+                BluetoothProfileConnector.connect(deviceWithUuid,profileList,bluetoothAdapter,context);
             }
         }
     };
@@ -74,6 +99,7 @@ public class BluetoothActivity extends AppCompatActivity {
         checkPermission();
     }
 
+
     private void checkPermission() {
         if (!(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)) {
             ActivityCompat.requestPermissions(this
@@ -82,14 +108,15 @@ public class BluetoothActivity extends AppCompatActivity {
         }
     }
 
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        switch (requestCode){
+        switch (requestCode) {
             case 1:
-                if (grantResults[0]==PackageManager.PERMISSION_GRANTED){
+                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     Log.d(TAG, "onRequestPermissionsResult: 请求权限成功");
+                } else {
+                    Toast.makeText(this, "权限请求失败，app无法正常工作", Toast.LENGTH_SHORT).show();
                 }
                 break;
         }
@@ -102,14 +129,15 @@ public class BluetoothActivity extends AppCompatActivity {
     }
 
     private void registerReceiver() {
-        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);//监听：发现到设备,由BluetoothAdapter#startDiscovery发起
+        filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);//监听：配对设备，由BlueToothDevice#createBond()发起
+        filter.addAction(BluetoothDevice.ACTION_UUID);//监听：获取远程设备支持的UUID，由BluetoothDevice#fetchUuidsWithSdp()发起
         registerReceiver(receiver, filter);
     }
 
-
     private void initBluetooth() {
         if (bluetoothAdapter == null) {
-            //现在设备一般都支持蓝牙。
+            //小武是支持蓝牙的。
         } else {
             if (!bluetoothAdapter.isEnabled()) {
                 Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
@@ -129,51 +157,37 @@ public class BluetoothActivity extends AppCompatActivity {
             }
         });
 
-        rv = findViewById(R.id.rv);
+        RecyclerView rv = findViewById(R.id.rv);
         rv_adapter = new Rv_Adapter(this, deviceList);
         rv_adapter.setItemClickListener(new Rv_Adapter.OnItemClickListener() {
             @Override
             public void onClick(BluetoothDevice device) {
-                connectDevice(device);
+                //配对设备
+                boolean beginBond=device.createBond();
+                if (beginBond){
+                    Toast.makeText(BluetoothActivity.this, "开始配对", Toast.LENGTH_SHORT).show();
+                }else {
+                    Toast.makeText(BluetoothActivity.this, "配对失败", Toast.LENGTH_SHORT).show();
+                }
+
+                //获取远程设备支持的UUID数组。在BroadcastReceiver中处理系统回调。
+                device.fetchUuidsWithSdp();
+
             }
         });
         rv.setAdapter(rv_adapter);
         rv.setLayoutManager(new LinearLayoutManager(this));
+
+        RecyclerView rvPairedDevice = findViewById(R.id.rv_paired);
+        rvPairedDeviceAdapter=new RvPairedDeviceAdapter(pairedDeviceList,this);
+        rvPairedDevice.setAdapter(rvPairedDeviceAdapter);
+        rvPairedDevice.setLayoutManager(new LinearLayoutManager(this));
+
     }
 
-    private void connectDevice(final BluetoothDevice device){
-        bluetoothAdapter.getProfileProxy(this, new BluetoothProfile.ServiceListener() {
-            @Override
-            public void onServiceConnected(int profile, BluetoothProfile proxy) {
-                if (BluetoothProfile.A2DP==profile){
-                    a2dp= (BluetoothA2dp) proxy;
-                    try{
-                        Method connectMethod=BluetoothA2dp.class.getMethod(
-                                "connect",BluetoothDevice.class
-                        );
-                        connectMethod.invoke(a2dp,device);
-                    }catch (Exception e){
-                        Log.d(TAG, "onServiceConnected: 蓝牙连接出错");
-                        e.printStackTrace();
-                    }
-
-                }
-            }
-
-            @Override
-            public void onServiceDisconnected(int profile) {
-                a2dp=null;
-            }
-        },BluetoothProfile.A2DP);
-    }
-
-    private void pairedDevice() {
-
-        List<BluetoothDevice> pairedList = new ArrayList<>(bluetoothAdapter.getBondedDevices());//获取已匹配的设备
-        for (BluetoothDevice device : pairedList) {
-            Log.d(TAG, "pairedDevice: " + device.toString());
-        }
-
+    private void getPairedDevice() {//取得已经匹配的设备
+        pairedDeviceList.addAll(bluetoothAdapter.getBondedDevices());
+        rvPairedDeviceAdapter.notifyDataSetChanged();
     }
 
     @Override
@@ -191,7 +205,7 @@ public class BluetoothActivity extends AppCompatActivity {
 
     private void scanBluetooth() {
         Toast.makeText(this, "蓝牙已开启", Toast.LENGTH_SHORT).show();
-        pairedDevice();
+        getPairedDevice();
         boolean discovery = bluetoothAdapter.startDiscovery();//启动异步进程来发现设备，回调在receiver里面做。
         if (discovery) {
             Log.d(TAG, "scanBluetooth: 开始扫描");
